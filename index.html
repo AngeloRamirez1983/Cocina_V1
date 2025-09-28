@@ -25,6 +25,7 @@ button{cursor:pointer;font-weight:600}
 .btn-ok{background:#16803d;border-color:#146c33}
 .btn-ghost{background:#0d1526;border-color:#15213a}
 .btn-warn{background:#b96a09;border-color:#9a5808}
+.hidden{display:none!important}
 .table{width:100%;border-collapse:collapse}
 .table th,.table td{border-bottom:1px solid #1f2e46;padding:8px;text-align:left}
 .badge{display:inline-flex;gap:6px;align-items:center;padding:8px 14px;border-radius:14px;background:#0d1c32;border:1px solid var(--border);font-size:15px;font-weight:700}
@@ -60,12 +61,44 @@ button{cursor:pointer;font-weight:600}
 <body>
 <div class="container">
 
-  <header class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-    <h1>Cocina – Punto de Venta</h1>
+  <header class="card" style="display:flex;gap:12px;align-items:center">
+    <h1 style="margin-right:auto">Cocina – Punto de Venta</h1>
+    <span id="who" class="tag">Sin sesión</span>
+    <button id="btnLogin" class="btn-ghost">Iniciar sesión</button>
+    <button id="btnLogout" class="btn-ghost hidden">Cerrar sesión</button>
     <span id="orderCount" class="badge">Órdenes abiertas: 0</span>
     <a class="btn-ghost" href="#" id="backToParking">← Ir a Parking</a>
   </header>
 
+  <!-- LOGIN -->
+  <section class="card" id="viewLogin" style="display:none">
+    <h2>Acceso</h2>
+    <div class="row">
+      <div><label>Usuario</label><input id="loginUser" autocomplete="username"/></div>
+      <div><label>Clave</label><input id="loginPass" type="password" autocomplete="current-password"/></div>
+      <div style="align-self:flex-end"><button id="doLogin" class="btn-ok">Entrar</button></div>
+    </div>
+  </section>
+
+  <!-- ADMIN (Precios) -->
+  <section class="card" id="viewAdmin" style="display:none">
+    <h2>Administración (precios)</h2>
+    <div class="row">
+      <div><label>SKU</label><input id="admSku" placeholder="p.ej. BURG_CLASSIC"/></div>
+      <div><label>Nuevo precio ($)</label><input id="admPrice" type="number" min="0"/></div>
+      <div style="align-self:flex-end">
+        <button id="admSet" class="btn-ok">Guardar override</button>
+        <button id="admDel" class="btn-warn">Quitar override</button>
+      </div>
+    </div>
+    <div class="small">Overrides activos:</div>
+    <table class="table" id="tblOverrides">
+      <thead><tr><th>SKU</th><th>Precio</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- MENÚ -->
   <section class="card">
     <div class="row">
       <div>
@@ -81,10 +114,10 @@ button{cursor:pointer;font-weight:600}
         <button class="btn-ghost" id="btnResetMenu">Restaurar ejemplo</button>
       </div>
     </div>
-
     <div class="grid cols-3" id="menuGrid" style="margin-top:8px"></div>
   </section>
 
+  <!-- PEDIDO -->
   <section class="card">
     <h2>Pedido</h2>
     <table class="table" id="tblItems">
@@ -108,6 +141,7 @@ button{cursor:pointer;font-weight:600}
     </div>
   </section>
 
+  <!-- HISTORIAL -->
   <section class="card">
     <h2>Órdenes recientes</h2>
     <table class="table" id="tblOrders">
@@ -125,7 +159,7 @@ button{cursor:pointer;font-weight:600}
       <h3>Importar menú (pega tu JSON)</h3>
       <button class="btn-ghost" id="impClose">✕</button>
     </div>
-    <div class="small">Formato: {"categorias":[{"nombre":"Bebidas","items":[{"sku":"COCA","nombre":"Coca-Cola 350","precio":1200,"img":"url-opcional"}]}]}</div>
+    <div class="small">Formato: {"categorias":[{"nombre":"Bebidas","items":[{"sku":"COCA","nombre":"Coca-Cola 350","precio":1200,"img":"./imgs/coca.png"}]}]}</div>
     <textarea id="impText" placeholder='{"categorias":[...]}'></textarea>
     <div class="right" style="margin-top:8px">
       <button class="btn" id="impExample">Poner ejemplo</button>
@@ -135,7 +169,7 @@ button{cursor:pointer;font-weight:600}
 </div>
 
 <script>
-/* ======= Config & Utils ======= */
+/* ======= Utils ======= */
 const TZ='America/Santiago';
 const SECRET='CAMBIA-ESTO-EN-PRODUCCION';
 const $ = (id)=>document.getElementById(id);
@@ -144,25 +178,66 @@ const money = (n)=> (Number(n||0)).toLocaleString('es-CL');
 function nowISO(){ return new Date().toISOString(); }
 function genId(){ return 'ord_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 function signId(id){ const sig=CryptoJS.HmacSHA256(id,SECRET).toString(CryptoJS.enc.Hex).slice(0,16); return `${id}.${sig}`; }
-const store={ get(k,def){ try{ const v=localStorage.getItem(k); return v? JSON.parse(v): def; }catch(_){ return def; } }, set(k,v){ localStorage.setItem(k, JSON.stringify(v)); } };
+const store={ get(k,def){ try{ const v=localStorage.getItem(k); return v? JSON.parse(v): def; }catch(_){ return def; } }, set(k,v){ localStorage.setItem(k, JSON.stringify(v)); }, del(k){ localStorage.removeItem(k);} };
 
-const PLACEHOLDERS={
-  burger:'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><rect width="100%" height="100%" rx="12" fill="%230b1728"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="%23ffd166" font-size="64">🍔</text></svg>',
-  sandwich:'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><rect width="100%" height="100%" rx="12" fill="%230b1728"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="%23a3e635" font-size="64">🥪</text></svg>',
-  fries:'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><rect width="100%" height="100%" rx="12" fill="%230b1728"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="%23f59e0b" font-size="64">🍟</text></svg>',
-  chicken:'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><rect width="100%" height="100%" rx="12" fill="%230b1728"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="%23fb7185" font-size="64">🍗</text></svg>',
-  sauce:'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><rect width="100%" height="100%" rx="12" fill="%230b1728"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="%2393c5fd" font-size="64">🥣</text></svg>'
-};
+/* ======= Placeholders ======= */
+const PH=(emoji,color)=>`data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><rect width='100%' height='100%' rx='12' fill='%230b1728'/><text x='50%' y='54%' dominant-baseline='middle' text-anchor='middle' fill='${encodeURIComponent(color)}' font-size='64'>${emoji}</text></svg>`;
+const PLACEHOLDERS={ burger:PH('🍔','#ffd166'), sandwich:PH('🥪','#a3e635'), fries:PH('🍟','#f59e0b'), chicken:PH('🍗','#fb7185'), sauce:PH('🥣','#93c5fd') };
 
-/* ======= Menú desde archivo o fallback ======= */
+/* ======= SSO compartido con Parking ======= */
+const SSO_KEY='arpos_session';
+const USERS_KEY='users';
+function ssoGet(){ return store.get(SSO_KEY, null); }
+function ssoSet(sess){ store.set(SSO_KEY, sess); }
+function ssoClear(){ store.del(SSO_KEY); }
+function getUsers(){ return store.get(USERS_KEY,[{user:'admin',pass:'12345',role:'admin'},{user:'operador',pass:'67890',role:'operador'}]); }
+const session={user:null,role:null};
+function updateHeader(){
+  const who=$('who'); const logged=!!session.user;
+  who.textContent = logged?`Sesión: ${session.user} (${session.role})`:'Sin sesión';
+  $('btnLogin').classList.toggle('hidden', logged);
+  $('btnLogout').classList.toggle('hidden', !logged);
+  $('viewAdmin').style.display = (logged && session.role==='admin')?'':'none';
+}
+function showLogin(show){ $('viewLogin').style.display=show?'':''; }
+function login(u,p){
+  const hit=getUsers().find(x=>x.user===u && x.pass===p);
+  if(!hit) return false;
+  session.user=hit.user; session.role=hit.role==='admin'?'admin':'operador';
+  ssoSet({user:session.user,role:session.role,at:nowISO()});
+  updateHeader(); showLogin(false); return true;
+}
+function logout(){ session.user=null; session.role=null; ssoClear(); updateHeader(); showLogin(true); }
+$('btnLogin').onclick=()=>showLogin(true);
+$('btnLogout').onclick=logout;
+$('doLogin').onclick=()=>{ const u=$('loginUser').value.trim(), p=$('loginPass').value.trim(); if(!login(u,p)) alert('Credenciales inválidas'); };
+['loginUser','loginPass'].forEach(id=> $(id).addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('doLogin').click(); }}));
+(function bootSSO(){ const s=ssoGet(); if(s&&s.user){ session.user=s.user; session.role=s.role; showLogin(false);} else { showLogin(true);} updateHeader(); })();
+
+/* ======= Menú & Overrides ======= */
 const MENU_KEY='food_menu_v2';
+const OV_KEY='menu_price_overrides'; // { SKU: precio }
+function getOverrides(){ return store.get(OV_KEY,{}); }
+function setOverrides(o){ store.set(OV_KEY,o); }
+function applyPrice(sku,base){ const ov=getOverrides(); return (ov && ov[sku]!=null)?Number(ov[sku]):base; }
+function renderOverridesTable(){
+  const tb=$('tblOverrides').querySelector('tbody'); tb.innerHTML='';
+  const ov=getOverrides(); Object.entries(ov).forEach(([sku,price])=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td class="mono">${sku}</td><td class="mono">$${money(price)}</td><td><button class="btn-ghost" data-sku="${sku}">Editar</button></td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll('button[data-sku]').forEach(b=> b.onclick=()=>{ $('admSku').value=b.dataset.sku; $('admPrice').value=getOverrides()[b.dataset.sku]; });
+}
+if($('admSet')) $('admSet').onclick=()=>{ if(session.role!=='admin') return alert('Solo admin'); const sku=$('admSku').value.trim(); const price=Math.max(0,parseInt(($('admPrice').value||'0'),10)); if(!sku) return alert('SKU obligatorio'); const ov=getOverrides(); ov[sku]=price; setOverrides(ov); renderOverridesTable(); renderGrid(); renderItems(); updateTotal(); alert('Precio actualizado.'); };
+if($('admDel')) $('admDel').onclick=()=>{ if(session.role!=='admin') return alert('Solo admin'); const sku=$('admSku').value.trim(); if(!sku) return alert('SKU obligatorio'); const ov=getOverrides(); delete ov[sku]; setOverrides(ov); renderOverridesTable(); renderGrid(); renderItems(); updateTotal(); alert('Override eliminado.'); };
 
 const MENU_FALLBACK={
   "categorias":[
     {"nombre":"Sandwich y Hamburguesa","items":[
       {"sku":"SAND_CLASSIC","nombre":"Sandwich Classic","precio":6000,"img":PLACEHOLDERS.sandwich,"desc":"Pechuga apanada + lechuga + tomate + queso + mayo casera"},
       {"sku":"SAND_ITALIAN","nombre":"Sandwich Italian","precio":6500,"img":PLACEHOLDERS.sandwich,"desc":"Pechuga apanada + palta + tomate + mayo casera"},
-      {"sku":"SAND_TEXAN","nombre":"Sandwich Texan","precio":6500,"img":PLACEHOLDERS.sandwich,"desc":"Pechuga apanada + aros cebolla + tocino + pepinillos + cheddar + BBQ"},
+      {"sku":"SAND_TEXAN","nombre":"Sandwich Texan","precio":6500,"img":PLACEHOLDERS.sandwich,"desc":"Pechuga + aros cebolla + tocino + pepinillos + cheddar + BBQ"},
       {"sku":"BURG_CLASSIC","nombre":"Hamburguesa Classic","precio":6000,"img":PLACEHOLDERS.burger,"desc":"Hamburguesa + lechuga + tomate + doble cheddar + salsa golf"},
       {"sku":"BURG_TEXAN","nombre":"Hamburguesa Texan","precio":6500,"img":PLACEHOLDERS.burger,"desc":"Hamburguesa + aros cebolla + tocino + pepinillos + doble cheddar + BBQ"},
       {"sku":"ADD_PAPAS","nombre":"Agrégale papas","precio":1000,"img":PLACEHOLDERS.fries,"desc":"Adición a tu sandwich/burger"}
@@ -170,8 +245,8 @@ const MENU_FALLBACK={
     {"nombre":"Pollo Apanado","items":[
       {"sku":"CRISPY_12","nombre":"Pollo Crispy (11–12 trozos)","precio":7500,"img":PLACEHOLDERS.chicken},
       {"sku":"CRISPY_PAPAS","nombre":"Pollo Crispy + Papas (5 trozos)","precio":6500,"img":PLACEHOLDERS.chicken},
-      {"sku":"MILANESA_CLAS","nombre":"Milanesa Clásica","precio":7000,"img":PLACEHOLDERS.chicken,"desc":"Milanesa pechuga + papas fritas"},
-      {"sku":"MILANESA_NAPO","nombre":"Milanesa Napolitana","precio":6000,"img":PLACEHOLDERS.chicken,"desc":"Milanesa + salsa tomate + jamón + queso + papas fritas"}
+      {"sku":"MILANESA_CLAS","nombre":"Milanesa Clásica","precio":7000,"img":PLACEHOLDERS.chicken,"desc":"Milanesa + papas fritas"},
+      {"sku":"MILANESA_NAPO","nombre":"Milanesa Napolitana","precio":6000,"img":PLACEHOLDERS.chicken,"desc":"Milanesa + salsa tomate + jamón + queso + papas"}
     ]},
     {"nombre":"Papas y más","items":[
       {"sku":"PAPAS_M","nombre":"Papas medianas","precio":4500,"img":PLACEHOLDERS.fries},
@@ -188,77 +263,54 @@ const MENU_FALLBACK={
     ]}
   ]
 };
-
-function getMenuLocal(){ return store.get(MENU_KEY, null); }
-function setMenuLocal(m){ store.set(MENU_KEY, m); }
-
 async function loadMenu(){
-  // 1) localStorage
-  const local=getMenuLocal(); if(local) return local;
-  // 2) menu.json del repo
-  try{
-    const res = await fetch('./menu.json', {cache:'no-cache'});
-    if(res.ok){
-      const data = await res.json();
-      setMenuLocal(data);
-      return data;
-    }
-  }catch(_){}
-  // 3) fallback embebido
-  setMenuLocal(MENU_FALLBACK);
-  return MENU_FALLBACK;
+  const local=store.get(MENU_KEY,null); if(local) return local;
+  try{ const r=await fetch('./menu.json',{cache:'no-cache'}); if(r.ok){ const d=await r.json(); store.set(MENU_KEY,d); return d; } }catch(_){}
+  store.set(MENU_KEY,MENU_FALLBACK); return MENU_FALLBACK;
 }
 
-/* ======= Estado de la app ======= */
-let MENU = null;
-let currentCat = '';
-let items=[];
-
-/* ======= Render UI ======= */
+/* ======= Estado ======= */
+let MENU=null, currentCat='', items=[];
 function renderCatTabs(){
   const wrap=$('catTabs'); wrap.innerHTML='';
   (MENU.categorias||[]).forEach(cat=>{
-    const btn=document.createElement('button');
-    btn.className='tab'+(cat.nombre===currentCat?' active':'');
-    btn.textContent=cat.nombre;
-    btn.onclick=()=>{ currentCat=cat.nombre; renderGrid(); renderCatTabs(); };
-    wrap.appendChild(btn);
+    const b=document.createElement('button');
+    b.className='tab'+(cat.nombre===currentCat?' active':'');
+    b.textContent=cat.nombre;
+    b.onclick=()=>{ currentCat=cat.nombre; renderGrid(); renderCatTabs(); };
+    wrap.appendChild(b);
   });
 }
-
 function getFilteredItems(){
-  const q = ($('search').value||'').toLowerCase();
-  const cats = MENU.categorias||[];
-  const cat = cats.find(c=>c.nombre===currentCat) || {items:[]};
-  let list = cat.items||[];
-  if(q) list = list.filter(i=> (i.nombre||'').toLowerCase().includes(q) || (i.sku||'').toLowerCase().includes(q) );
+  const q=($('search').value||'').toLowerCase();
+  const cat=(MENU.categorias||[]).find(c=>c.nombre===currentCat)||{items:[]};
+  let list=cat.items||[];
+  if(q) list=list.filter(i=>(i.nombre||'').toLowerCase().includes(q) || (i.sku||'').toLowerCase().includes(q));
   return list;
 }
-
 function renderGrid(){
-  const grid = $('menuGrid'); grid.innerHTML='';
-  const list = getFilteredItems();
+  const grid=$('menuGrid'); grid.innerHTML='';
+  const list=getFilteredItems();
   if(list.length===0){ grid.innerHTML='<div class="small">Sin resultados…</div>'; return; }
   list.forEach(it=>{
     const card=document.createElement('button'); card.className='item-card';
-    const img = document.createElement('img'); img.src = it.img || PLACEHOLDERS.sandwich; img.alt = it.nombre;
-    const info = document.createElement('div');
-    const t = document.createElement('div'); t.className='item-title'; t.textContent = it.nombre;
-    const s = document.createElement('div'); s.className='item-sub mono'; s.textContent = `$${money(it.precio)} · ${it.sku||''}`;
+    const img=document.createElement('img'); img.src=it.img||PLACEHOLDERS.sandwich; img.alt=it.nombre;
+    const info=document.createElement('div');
+    const t=document.createElement('div'); t.className='item-title'; t.textContent=it.nombre;
+    const priceShown=applyPrice(it.sku,it.precio);
+    const s=document.createElement('div'); s.className='item-sub mono'; s.textContent=`$${money(priceShown)} · ${it.sku||''}`;
     info.appendChild(t); if(it.desc){ const d=document.createElement('div'); d.className='item-sub'; d.textContent=it.desc; info.appendChild(d); }
-    info.appendChild(s);
-    card.appendChild(img); card.appendChild(info);
-    card.onclick = ()=> addItem(it);
+    info.appendChild(s); card.appendChild(img); card.appendChild(info);
+    card.onclick=()=>addItem(it);
     grid.appendChild(card);
   });
 }
-$('search').addEventListener('input', renderGrid);
+$('search').addEventListener('input',renderGrid);
 
-/* ======= Pedido ======= */
 function addItem(base){
-  const existing = items.find(i=> i.sku===base.sku);
-  if(existing) existing.qty += 1;
-  else items.push({ sku:base.sku, name:base.nombre, price:base.precio, qty:1 });
+  const priceFinal=applyPrice(base.sku,base.precio);
+  const ex=items.find(i=>i.sku===base.sku);
+  if(ex) ex.qty+=1; else items.push({sku:base.sku,name:base.nombre,price:priceFinal,qty:1});
   renderItems();
 }
 function renderItems(){
@@ -266,194 +318,116 @@ function renderItems(){
   items.forEach((it,idx)=>{
     const sub=it.price*it.qty;
     const tr=document.createElement('tr');
-    tr.innerHTML=`
-      <td>${it.name} <span class="small mono">${it.sku||''}</span></td>
+    tr.innerHTML=`<td>${it.name} <span class="small mono">${it.sku||''}</span></td>
       <td class="mono">$${money(it.price)}</td>
-      <td class="mono">
-        <span class="qty">
-          <button class="btn-ghost" data-dec="${idx}">-</button>
-          ${it.qty}
-          <button class="btn-ghost" data-inc="${idx}">+</button>
-        </span>
-      </td>
+      <td class="mono"><span class="qty">
+        <button class="btn-ghost" data-dec="${idx}">-</button>${it.qty}
+        <button class="btn-ghost" data-inc="${idx}">+</button></span></td>
       <td class="mono">$${money(sub)}</td>
       <td><button class="btn-ghost" data-del="${idx}">Quitar</button></td>`;
     tb.appendChild(tr);
   });
-  tb.querySelectorAll('button[data-dec]').forEach(b=> b.onclick=()=>{ const i=Number(b.dataset.dec); items[i].qty=Math.max(1,items[i].qty-1); renderItems(); });
-  tb.querySelectorAll('button[data-inc]').forEach(b=> b.onclick=()=>{ const i=Number(b.dataset.inc); items[i].qty+=1; renderItems(); });
-  tb.querySelectorAll('button[data-del]').forEach(b=> b.onclick=()=>{ items.splice(Number(b.dataset.del),1); renderItems(); });
+  tb.querySelectorAll('button[data-dec]').forEach(b=>b.onclick=()=>{ const i=+b.dataset.dec; items[i].qty=Math.max(1,items[i].qty-1); renderItems(); });
+  tb.querySelectorAll('button[data-inc]').forEach(b=>b.onclick=()=>{ const i=+b.dataset.inc; items[i].qty+=1; renderItems(); });
+  tb.querySelectorAll('button[data-del]').forEach(b=>b.onclick=()=>{ items.splice(+b.dataset.del,1); renderItems(); });
   updateTotal();
 }
 function updateTotal(){
-  const discount = Math.max(0, parseInt($('discount').value||'0',10));
-  const total = Math.max(0, items.reduce((a,b)=>a+b.price*b.qty,0) - discount);
-  $('total').textContent = '$'+money(total);
-  return total;
+  const discount=Math.max(0,parseInt(($('discount').value||'0'),10));
+  const total=Math.max(0, items.reduce((a,b)=>a+b.price*b.qty,0)-discount);
+  $('total').textContent='$'+money(total); return total;
 }
-$('discount').addEventListener('input', updateTotal);
+$('discount').addEventListener('input',updateTotal);
 
 /* ======= QR + Impresión ======= */
-function renderQR(text){
-  const el=$('qrPreview'); el.innerHTML=''; new QRCode(el,{text, width:160, height:160, correctLevel:QRCode.CorrectLevel.M});
-}
-
-function printClientTicket({signed, total, list, note}){
-  const { jsPDF } = window.jspdf;
-  const W=45, H=200, M=3; const doc=new jsPDF({unit:'mm',format:[W,H],orientation:'portrait'});
-  let y=8, cx=W/2, lh=5, inner=W-M*2;
-
-  doc.setFont('helvetica','bold'); doc.setFontSize(11);
-  doc.text('Puesto de Comida – Est. Rengo', cx, y, {align:'center'}); y+=lh+1;
-
+function renderQR(text){ const el=$('qrPreview'); el.innerHTML=''; new QRCode(el,{text,width:160,height:160,correctLevel:QRCode.CorrectLevel.M}); }
+function printClientTicket({signed,total,list,note}){
+  const { jsPDF }=window.jspdf;
+  const W=45,H=200,M=3; const doc=new jsPDF({unit:'mm',format:[W,H],orientation:'portrait'});
+  let y=8,cx=W/2,lh=5,inner=W-M*2;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('Puesto de Comida – Est. Rengo',cx,y,{align:'center'}); y+=lh+1;
   doc.setFont('helvetica','normal'); doc.setFontSize(9);
-  doc.text(`Fecha: ${fmtDate(new Date().toISOString())}`, M, y); y+=lh;
-  doc.text(`Pedido: FOOD:${signed}`, M, y); y+=lh+2;
-
+  doc.text(`Fecha: ${fmtDate(nowISO())}`,M,y); y+=lh;
+  doc.text(`Pedido: FOOD:${signed}`,M,y); y+=lh+2;
   doc.setDrawColor(120); doc.line(M,y,W-M,y); y+=3;
-  doc.setFontSize(8); doc.text('Detalle', M, y); y+=lh;
-  list.forEach(it=>{
-    doc.text(`${it.qty}x ${it.name}`, M, y); 
-    doc.text(`$${money(it.price*it.qty)}`, W-M, y, {align:'right'}); 
-    y+=lh;
-  });
-  if(note){
-    y+=2; doc.setFontSize(8);
-    doc.text('Nota:', M, y); y+=lh;
-    const lines=doc.splitTextToSize(note, inner);
-    lines.forEach(line=>{ doc.text(line, M, y); y+=lh-1; });
-  }
-
+  doc.setFontSize(8); doc.text('Detalle',M,y); y+=lh;
+  list.forEach(it=>{ doc.text(`${it.qty}x ${it.name}`,M,y); doc.text(`$${money(it.price*it.qty)}`,W-M,y,{align:'right'}); y+=lh; });
+  if(note){ y+=2; doc.setFontSize(8); doc.text('Nota:',M,y); y+=lh; doc.splitTextToSize(note,inner).forEach(line=>{ doc.text(line,M,y); y+=lh-1; }); }
   y+=3; doc.setDrawColor(120); doc.line(M,y,W-M,y); y+=4;
-  doc.setFontSize(11); doc.setFont('helvetica','bold');
-  doc.text(`TOTAL: $${money(total)}`, cx, y, {align:'center'}); y+=lh+2;
-
-  // QR
-  const qrDiv=document.createElement('div'); new QRCode(qrDiv,{text:'FOOD:'+signed,width:160,height:160});
-  const c=qrDiv.querySelector('canvas')||qrDiv.querySelector('img');
-  if(c){ const canvas=document.createElement('canvas'); canvas.width=160; canvas.height=160; const ctx=canvas.getContext('2d'); try{ ctx.drawImage(c,0,0);}catch(_){}
-    const durl=canvas.toDataURL('image/jpeg',0.95);
-    doc.addImage(durl,'JPEG',(W-35)/2,y,35,35); y+=37;
-  }
-
-  doc.setFontSize(7); doc.setFont('helvetica','normal');
-  doc.text('Paga este pedido en Caja (Parking)', cx, y, {align:'center'}); y+=lh;
-  doc.text('Desarrollado por ARSM Servicios', cx, y, {align:'center'});
-
-  const url = URL.createObjectURL(doc.output('blob'));
-  const w = window.open(url, '_blank');
-  if(w){ setTimeout(()=>{ try{ w.focus(); w.print(); }catch(_){} }, 400); }
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text(`TOTAL: $${money(total)}`,cx,y,{align:'center'}); y+=lh+2;
+  const div=document.createElement('div'); new QRCode(div,{text:'FOOD:'+signed,width:160,height:160});
+  const c=div.querySelector('canvas')||div.querySelector('img');
+  if(c){ const canvas=document.createElement('canvas'); canvas.width=160; canvas.height=160; const ctx=canvas.getContext('2d'); try{ctx.drawImage(c,0,0);}catch(_){} const durl=canvas.toDataURL('image/jpeg',0.95); doc.addImage(durl,'JPEG',(W-35)/2,y,35,35); y+=37; }
+  doc.setFont('helvetica','normal'); doc.setFontSize(7);
+  doc.text('Paga este pedido en Caja (Parking)',cx,y,{align:'center'}); y+=lh;
+  doc.text('Desarrollado por ARSM Servicios',cx,y,{align:'center'});
+  const url=URL.createObjectURL(doc.output('blob')); const w=window.open(url,'_blank'); if(w){ setTimeout(()=>{ try{w.focus(); w.print();}catch(_){} },400); }
 }
-
-function printKitchenTicket({signed, list, note}){
-  const { jsPDF } = window.jspdf;
-  const W=58, H=200, M=3; const doc=new jsPDF({unit:'mm',format:[W,H],orientation:'portrait'});
-  let y=8, cx=W/2, lh=5, inner=W-M*2;
-
-  doc.setFont('helvetica','bold'); doc.setFontSize(12);
-  doc.text('ORDEN COCINA', cx, y, {align:'center'}); y+=lh;
+function printKitchenTicket({signed,list,note}){
+  const { jsPDF }=window.jspdf;
+  const W=58,H=200,M=3; const doc=new jsPDF({unit:'mm',format:[W,H],orientation:'portrait'});
+  let y=8,cx=W/2,lh=5,inner=W-M*2;
+  doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.text('ORDEN COCINA',cx,y,{align:'center'}); y+=lh;
   doc.setFont('helvetica','normal'); doc.setFontSize(9);
-  doc.text(`Hora: ${fmtDate(new Date().toISOString())}`, M, y); y+=lh;
-  doc.text(`ID: FOOD:${signed}`, M, y); y+=lh+2;
-
+  doc.text(`Hora: ${fmtDate(nowISO())}`,M,y); y+=lh;
+  doc.text(`ID: FOOD:${signed}`,M,y); y+=lh+2;
   doc.setDrawColor(120); doc.line(M,y,W-M,y); y+=3;
-  doc.setFontSize(10);
-  list.forEach(it=>{
-    doc.text(`${it.qty}x ${it.name}`, M, y); y+=lh+1;
-  });
-  if(note){
-    y+=2; doc.setFontSize(9);
-    doc.text('Nota:', M, y); y+=lh;
-    const lines=doc.splitTextToSize(note, inner);
-    lines.forEach(line=>{ doc.text(line, M, y); y+=lh-1; });
-  }
-
-  const url = URL.createObjectURL(doc.output('blob'));
-  const w = window.open(url, '_blank');
-  if(w){ setTimeout(()=>{ try{ w.focus(); w.print(); }catch(_){} }, 400); }
+  doc.setFontSize(10); list.forEach(it=>{ doc.text(`${it.qty}x ${it.name}`,M,y); y+=lh+1; });
+  if(note){ y+=2; doc.setFontSize(9); doc.text('Nota:',M,y); y+=lh; doc.splitTextToSize(note,inner).forEach(line=>{ doc.text(line,M,y); y+=lh-1; }); }
+  const url=URL.createObjectURL(doc.output('blob')); const w=window.open(url,'_blank'); if(w){ setTimeout(()=>{ try{w.focus(); w.print();}catch(_){} },400); }
 }
 
 /* ======= Órdenes ======= */
-if(!store.get('orders')) store.set('orders',{});  // id -> order
-function pushOrder(order){
-  const map=store.get('orders',{}); map[order.id]=order; store.set('orders',map);
-}
+if(!store.get('orders')) store.set('orders',{});
+function pushOrder(o){ const m=store.get('orders',{}); m[o.id]=o; store.set('orders',m); }
 function getOrders(){ return store.get('orders',{}); }
 function openCount(){ return Object.values(getOrders()).filter(o=>o.status==='open').length; }
 function renderOrders(){
   const tb=$('tblOrders').querySelector('tbody'); tb.innerHTML='';
-  const rows=Object.values(getOrders()).sort((a,b)=> a.createdAt < b.createdAt ? 1 : -1);
+  const rows=Object.values(getOrders()).sort((a,b)=> a.createdAt<b.createdAt?1:-1);
   rows.forEach(o=>{
     const tr=document.createElement('tr');
     const names=o.items.map(i=>`${i.qty}x ${i.name}`).join(', ');
-    tr.innerHTML=`
-      <td class="mono">${o.id}</td>
-      <td class="mono">${fmtDate(o.createdAt)}</td>
-      <td>${names}</td>
-      <td class="mono">$${money(o.total)}</td>
-      <td>${o.status}</td>`;
+    tr.innerHTML=`<td class="mono">${o.id}</td><td class="mono">${fmtDate(o.createdAt)}</td><td>${names}</td><td class="mono">$${money(o.total)}</td><td>${o.status}</td>`;
     tb.appendChild(tr);
   });
-  $('orderCount').textContent = `Órdenes abiertas: ${openCount()}`;
+  $('orderCount').textContent=`Órdenes abiertas: ${openCount()}`;
 }
 
-/* ======= Importar/Reset ======= */
+/* ======= Importar menú ======= */
+const MENU_STORE='food_menu_v2';
+async function loadMenu(){
+  const local=store.get(MENU_STORE,null); if(local) return local;
+  try{ const r=await fetch('./menu.json',{cache:'no-cache'}); if(r.ok){ const d=await r.json(); store.set(MENU_STORE,d); return d; } }catch(_){}
+  store.set(MENU_STORE,MENU_FALLBACK); return MENU_FALLBACK;
+}
 document.getElementById('btnImportMenu').onclick=()=>{ document.getElementById('modalImport').style.display='flex'; };
 document.getElementById('impClose').onclick=()=>{ document.getElementById('modalImport').style.display='none'; };
-document.getElementById('impExample').onclick=()=>{ document.getElementById('impText').value = JSON.stringify(MENU_FALLBACK, null, 2); };
-document.getElementById('impApply').onclick=()=>{
-  try{
-    const obj = JSON.parse(document.getElementById('impText').value);
-    if(!obj || !Array.isArray(obj.categorias)) throw new Error('Formato inválido');
-    setMenuLocal(obj); MENU=obj;
-    currentCat = MENU.categorias?.[0]?.nombre || '';
-    renderCatTabs(); renderGrid();
-    document.getElementById('modalImport').style.display='none';
-    alert('Menú importado.');
-  }catch(e){ alert('JSON inválido: '+e.message); }
-};
-document.getElementById('btnResetMenu').onclick=()=>{ setMenuLocal(MENU_FALLBACK); MENU=MENU_FALLBACK; currentCat = MENU.categorias[0].nombre; renderCatTabs(); renderGrid(); };
+document.getElementById('impExample').onclick=()=>{ document.getElementById('impText').value=JSON.stringify(MENU_FALLBACK,null,2); };
+document.getElementById('impApply').onclick=()=>{ try{ const obj=JSON.parse(document.getElementById('impText').value); if(!obj||!Array.isArray(obj.categorias)) throw new Error('Formato inválido'); store.set(MENU_STORE,obj); MENU=obj; currentCat=MENU.categorias?.[0]?.nombre||''; renderCatTabs(); renderGrid(); document.getElementById('modalImport').style.display='none'; alert('Menú importado.'); }catch(e){ alert('JSON inválido: '+e.message); } };
+document.getElementById('btnResetMenu').onclick=()=>{ store.set(MENU_STORE,MENU_FALLBACK); MENU=MENU_FALLBACK; currentCat=MENU.categorias[0].nombre; renderCatTabs(); renderGrid(); };
 
 /* ======= Crear pedido ======= */
 document.getElementById('btnMakeOrder').onclick=()=>{
   if(items.length===0){ alert('Agrega al menos 1 producto'); return; }
-  const id=genId(); const signed=signId(id);
-  const discount=Math.max(0, parseInt(document.getElementById('discount').value||'0',10));
+  const id=genId(), signed=signId(id);
+  const discount=Math.max(0,parseInt(($('discount').value||'0'),10));
   const subtotal=items.reduce((a,b)=>a+b.price*b.qty,0);
-  const total=Math.max(0, subtotal - discount);
-  const order={
-    id, signed,
-    items: JSON.parse(JSON.stringify(items)),
-    subtotal, discount, tax:0, total,
-    status:'open',
-    createdAt: nowISO(),
-    by: 'operador_comida'
-  };
-  pushOrder(order);
-  renderOrders();
-
-  // QR preview
-  renderQR('FOOD:'+signed);
-  document.getElementById('orderSigned').textContent = 'FOOD:'+signed;
-
-  // Imprimir
-  printClientTicket({signed, total, list:order.items, note: document.getElementById('note').value.trim()});
-  printKitchenTicket({signed, list:order.items, note: document.getElementById('note').value.trim()});
-
-  // Reset
-  items=[]; renderItems(); document.getElementById('discount').value='0'; document.getElementById('note').value='';
+  const total=Math.max(0, subtotal-discount);
+  const order={ id, signed, items:JSON.parse(JSON.stringify(items)), subtotal, discount, tax:0, total, status:'open', createdAt:nowISO(), by:session.user||'operador_comida' };
+  pushOrder(order); renderOrders();
+  renderQR('FOOD:'+signed); $('orderSigned').textContent='FOOD:'+signed;
+  printClientTicket({signed,total,list:order.items,note: $('note').value.trim()});
+  printKitchenTicket({signed,list:order.items,note: $('note').value.trim()});
+  items=[]; renderItems(); $('discount').value='0'; $('note').value='';
 };
 
-/* ======= Inicio ======= */
+/* ======= Init ======= */
 (async function init(){
-  // Link de vuelta a parking (ajústalo si necesitas otra URL)
-  const PARKING_URL = "https://angeloramirez1983.github.io/Parking_V3/";
-  document.getElementById('backToParking').href = PARKING_URL;
-
-  MENU = await loadMenu();
-  currentCat = MENU.categorias?.[0]?.nombre || '';
-  renderCatTabs(); renderGrid();
-  renderItems(); renderOrders();
+  const PARKING_URL="https://angeloramirez1983.github.io/Parking_V3/";
+  $('backToParking').href=PARKING_URL;
+  MENU=await loadMenu(); currentCat=MENU.categorias?.[0]?.nombre||''; renderCatTabs(); renderGrid();
+  renderItems(); renderOrders(); renderOverridesTable();
 })();
 </script>
 </body>
